@@ -1,6 +1,41 @@
-<p1>cd lightspark
-mkdir build
-cd build
-cmake ..
-make
+<p1># Prepare the Build Environment
+sudo apt-get update
+sudo apt-get install -y openjdk-7-jdk git gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc
+
+# Download AOSP Source Code
+mkdir aosp
+cd aosp
+repo init -u https://android.googlesource.com/platform/manifest -b android-4.4.4_r2
+repo sync -j8
+
+# Build AOSP for x86-64
+source build/envsetup.sh
+lunch aosp_x86_64-eng
+make -j8
+
+# Create System Image
+make snod
+
+# Create Bootable ISO Image
+mkdir iso
+cp out/target/product/generic_x86_64/system.img iso/
+cp -r out/target/product/generic_x86_64/data iso/
+cp -r prebuilts/qemu-kernel/arm64/ranchu.efi iso/
+mkisofs -o aosp_kitkat_x86_64.iso -b system.img -no-emul-boot -boot-load-size 2048 -boot-info-table iso/
+
+# Format System Image with FAT32
+sudo mkdir /mnt/aosp_system
+sudo mount -o loop out/target/product/generic_x86_64/system.img /mnt/aosp_system
+sudo mkdosfs -F 32 /mnt/aosp_system/aosp_fat32.img
+sudo umount /mnt/aosp_system
+
+# Repackage System Image
+sudo mount -o loop out/target/product/generic_x86_64/system.img /mnt/aosp_system
+sudo cp /mnt/aosp_system/aosp_fat32.img /mnt/aosp_system/system.img
+sudo umount /mnt/aosp_system
+
+# Boot AOSP on QEMU
+sudo apt-get install qemu
+qemu-system-x86_64 -cdrom aosp_kitkat_x86_64.iso
+
 </p1>
