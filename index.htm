@@ -1,33 +1,8 @@
-<p1>sudo apt-get update
-sudo apt-get install -y openjdk-7-jdk git gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc
-
-mkdir aosp
-cd aosp
-repo init -u https://android.googlesource.com/platform/manifest -b android-4.4.4_r2
-repo sync -j8
-
-source build/envsetup.sh
-lunch aosp_x86_64-eng
-make -j8
-
-make snod
-
-mkdir iso
-cp out/target/product/generic_x86_64/system.img iso/
-cp -r out/target/product/generic_x86_64/data iso/
-cp -r prebuilts/qemu-kernel/arm64/ranchu.efi iso/
-mkisofs -o aosp_kitkat_x86_64.iso -b system.img -no-emul-boot -boot-load-size 2048 -boot-info-table iso/
-
-sudo mkdir /mnt/aosp_system
-sudo mount -o loop out/target/product/generic_x86_64/system.img /mnt/aosp_system
-sudo mkdosfs -F 32 /mnt/aosp_system/aosp_fat32.img
-sudo umount /mnt/aosp_system
-
-sudo mount -o loop out/target/product/generic_x86_64/system.img /mnt/aosp_system
-sudo cp /mnt/aosp_system/aosp_fat32.img /mnt/aosp_system/system.img
-sudo umount /mnt/aosp_system
-
-sudo apt-get install qemu
-qemu-system-x86_64 -cdrom aosp_kitkat_x86_64.iso
+<p1>sudo apt-get update && sudo apt-get install -y openjdk-7-jdk git-core gnupg flex bison gperf build-essential \
+    zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+    lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
+    libgl1-mesa-dev libxml2-utils xsltproc unzip && \
+mkdir ~/aosp-kitkat && cd ~/aosp-kitkat && repo init -u https://android.googlesource.com/platform/manifest -b android-4.4.4_r2 && repo sync -j8 && \
+source build/envsetup.sh && lunch aosp_arm-eng && make -j8
 
 </p1>
