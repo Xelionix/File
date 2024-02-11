@@ -1,0 +1,86 @@
+; bootloader.asm
+
+ORG 0x7C00
+
+section bootloader
+start:
+    ; Set up the segment registers
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+
+    ; Load the kernel from the second sector (assuming it's there)
+    mov ah, 0x02        ; Function code for read disk sectors
+    mov al, 1           ; Number of sectors to read
+    mov ch, 0           ; Cylinder number
+    mov cl, 2           ; Sector number (start from sector 2)
+    mov dh, 0           ; Head number
+    mov bx, 0x8000      ; Destination address to load the kernel
+    int 0x13            ; BIOS interrupt for disk I/O
+
+    ; Jump to the kernel
+    jmp 0x8000:0000     ; Jump to the beginning of the loaded kernel
+
+times 510 - ($-$$) db 0
+dw 0xAA55
+
+
+
+// kernel.c
+
+void printAsciiArt() {
+    // Your ASCII art goes here
+    char asciiArt[] =
+        "Hello, World!\n";
+
+    // Print the ASCII art to the screen
+    volatile unsigned char* video_memory = (volatile unsigned char*)0xB8000;
+    for (int i = 0; asciiArt[i] != '\0'; ++i) {
+        video_memory[i * 2] = asciiArt[i];
+        video_memory[i * 2 + 1] = 0x07;  // White text on black background
+    }
+}
+
+void kernelMain() {
+    // Call the function to display ASCII art
+    printAsciiArt();
+
+    // Additional kernel code can go here
+    // For simplicity, this kernel will halt the CPU after displaying ASCII art
+    asm volatile ("hlt");
+}
+
+
+
+ENTRY(kernelMain)
+OUTPUT_FORMAT("elf32-i386")
+
+SECTIONS {
+    . = 0x8000;  /* Kernel starts at 32KB */
+    .text :
+    {
+        *(.text)
+    }
+
+    .data :
+    {
+        *(.data)
+    }
+
+    .bss :
+    {
+        *(.bss)
+    }
+}
+
+
+
+gcc -m32 -c kernel.c -o kernel.o
+ld -m elf_i386 -T linker.ld kernel.o -o kernel.elf
+
+
+nasm -f bin bootloader.asm -o bootloader.bin
+
+
+cat bootloader.bin kernel.elf > os.img
+
