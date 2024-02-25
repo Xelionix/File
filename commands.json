@@ -1,294 +1,85 @@
-#include <stdio.h>
+Bootloader (bootloader.asm):
+assembly
 
-#define MAX_FILES 10
-#define MAX_FILENAME_LEN 20
-#define MAX_DATA_LEN 100
+section .text
+    global _start
 
-struct File {
-    char name[MAX_FILENAME_LEN];
-    char data[MAX_DATA_LEN];
-    uint32_t size;
-    // Add more file-related information as needed
-};
+_start:
+    ; Set up the stack
+    mov  esp, 0x7C00
+    mov  ebp, 0x7C00
 
-struct Directory {
-    char name[MAX_FILENAME_LEN];
-    struct File files[MAX_FILES];
-    int file_count;
-};
+    ; Load the kernel into memory (assumes the kernel is at sector 2)
+    mov  ah, 0x02  ; BIOS read sector function
+    mov  al, 1     ; Number of sectors to read
+    mov  ch, 0     ; Cylinder number
+    mov  cl, 2     ; Sector number
+    mov  dh, 0     ; Head number
+    mov  dl, 0     ; Drive number (boot drive)
+    mov  bx, 0x1000  ; Load kernel at address 0x1000
+    int  0x13      ; BIOS interrupt
 
-struct FileSystem {
-    struct Directory directories[MAX_FILES];
-    int directory_count;
-    int current_directory_index;
-};
+    ; Jump to the kernel
+    jmp  0x1000:0
 
-struct FileSystem derpos_fs;
+    ; Padding and magic number
+    times 510-($-$$) db 0
+    dw 0xAA55
+Kernel (kernel.asm):
+assembly
 
-// String functions
+section .text
+    global _start
 
-void string_copy(const char *src, char *dest, int max_len) {
-    int i = 0;
-    while (src[i] != '\0' && i < max_len - 1) {
-        dest[i] = src[i];
-        i++;
-    }
-    dest[i] = '\0';
-}
+_start:
+    ; Set up the segment registers
+    mov ax, 0x07C0
+    add ax, 288  ; 0x120
+    mov ss, ax
+    mov sp, 4096  ; Set stack pointer at 4KB
 
-void string_concat(char *dest, const char *src, int max_len) {
-    int i = 0;
-    while (dest[i] != '\0' && i < max_len - 1) {
-        i++;
-    }
+    ; Call the kernel main function
+    call main
 
-    int j = 0;
-    while (src[j] != '\0' && i < max_len - 1) {
-        dest[i] = src[j];
-        i++;
-        j++;
-    }
+    ; Infinite loop to prevent the kernel from executing random data
+    cli
+    hlt
 
-    dest[i] = '\0';
-}
+main:
+    ; Print "Hello, World!" to the screen
+    mov ah, 0x0E  ; BIOS teletype function
+    mov al, 'H'
+    int 0x10
+    mov al, 'e'
+    int 0x10
+    mov al, 'l'
+    int 0x10
+    int 0x10
+    mov al, 'o'
+    int 0x10
+    mov al, ','
+    int 0x10
+    mov al, ' '
+    int 0x10
+    mov al, 'W'
+    int 0x10
+    mov al, 'o'
+    int 0x10
+    mov al, 'r'
+    int 0x10
+    mov al, 'l'
+    int 0x10
+    mov al, 'd'
+    int 0x10
+    mov al, '!'
+    int 0x10
 
-int string_length(const char *str) {
-    int len = 0;
-    while (str[len] != '\0') {
-        len++;
-    }
-    return len;
-}
+    ; Return from main function
+    ret
+To compile and run the code, you can use NASM assembler and QEMU emulator:
 
-int string_compare(const char *str1, const char *str2) {
-    while (*str1 && (*str1 == *str2)) {
-        str1++;
-        str2++;
-    }
-    return *(unsigned char *)str1 - *(unsigned char *)str2;
-}
-
-// Basic screen functions
-
-void print_char(char c) {
-    // Use BIOS interrupt 0x10 to print a character
-    asm volatile (
-        "mov $0x0E, %%ah\n"
-        "mov %0, %%al\n"
-        "int $0x10\n"
-        :
-        : "m" (c)
-    );
-}
-
-void print_string(const char *str) {
-    // Loop through characters and call print_char
-    while (*str != '\0') {
-        print_char(*str);
-        str++;
-    }
-}
-
-// Basic input functions
-
-void read_char(char *input) {
-    // Use BIOS interrupt 0x16 to read a character
-    asm volatile (
-        "int $0x16\n"
-        : "=a" (*input)
-        : "a" (0x0000)
-    );
-}
-
-void read_string(char *buffer) {
-    // Loop to read characters until Enter is pressed
-    int index = 0;
-    char input;
-    do {
-        read_char(&input);
-
-        // Check for Enter (ASCII code 13)
-        if (input != 13) {
-            // Echo the character back to the screen
-            print_char(input);
-
-            // Store the character in the buffer
-            buffer[index++] = input;
-        }
-    } while (input != 13);
-
-    // Null-terminate the string
-    buffer[index] = '\0';
-}
-
-// File system functions
-
-void init_filesystem() {
-    // Initialize the file system with some dummy directories and files
-    struct Directory root_directory = {"root"};
-    struct Directory sub_directory = {"subdir"};
-    struct File file1 = {"file1.txt", "Hello, DerpOS!", 15};
-    struct File file2 = {"file2.txt", "Welcome to DerpOS Infdev!", 27};
-
-    root_directory.files[0] = file1;
-    sub_directory.files[0] = file2;
-
-    derpos_fs.directories[0] = root_directory;
-    derpos_fs.directories[1] = sub_directory;
-    derpos_fs.directory_count = 2;
-    derpos_fs.current_directory_index = 0;
-}
-
-void save_to_xml(const char* filename) {
-    FILE* xml_file = fopen(filename, "w");
-
-    if (xml_file == NULL) {
-        print_string("Error: Unable to open XML file for writing.\n");
-        return;
-    }
-
-    fprintf(xml_file, "<filesystem>\n");
-
-    for (int i = 0; i < derpos_fs.directory_count; ++i) {
-        fprintf(xml_file, "  <directory name=\"%s\">\n", derpos_fs.directories[i].name);
-
-        for (int j = 0; j < derpos_fs.directories[i].file_count; ++j) {
-            fprintf(xml_file, "    <file name=\"%s\" size=\"%u\">\n", 
-                    derpos_fs.directories[i].files[j].name, 
-                    derpos_fs.directories[i].files[j].size);
-            fprintf(xml_file, "      <![CDATA[%s]]>\n", 
-                    derpos_fs.directories[i].files[j].data);
-            fprintf(xml_file, "    </file>\n");
-        }
-
-        fprintf(xml_file, "  </directory>\n");
-    }
-
-    fprintf(xml_file, "</filesystem>\n");
-
-    fclose(xml_file);
-}
-
-void list_files() {
-    print_string("Files in DerpOS:\n");
-    for (int i = 0; i < derpos_fs.directories[derpos_fs.current_directory_index].file_count; ++i) {
-        print_string(derpos_fs.directories[derpos_fs.current_directory_index].files[i].name);
-        print_string("\n");
-    }
-}
-
-void change_directory(char *dirname) {
-    for (int i = 0; i < derpos_fs.directory_count; ++i) {
-        if (string_compare(dirname, derpos_fs.directories[i].name) == 0) {
-            derpos_fs.current_directory_index = i;
-            return;
-        }
-    }
-    print_string("Directory not found.\n");
-}
-
-void make_directory(char *dirname) {
-    if (derpos_fs.directory_count >= MAX_FILES) {
-        print_string("Maximum number of directories reached.\n");
-        return;
-    }
-
-    struct Directory new_directory = {0};
-    string_copy(dirname, new_directory.name, MAX_FILENAME_LEN);
-    derpos_fs.directories[derpos_fs.directory_count++] = new_directory;
-}
-
-void make_file(char *filename, char *type) {
-    if (derpos_fs.directories[derpos_fs.current_directory_index].file_count >= MAX_FILES) {
-        print_string("Maximum number of files reached.\n");
-        return;
-    }
-
-    struct File new_file = {0};
-    string_copy(filename, new_file.name, MAX_FILENAME_LEN);
-
-    if (string_compare(type, "text") == 0) {
-        // Text file
-        derpos_fs.directories[derpos_fs.current_directory_index].files[derpos_fs.directories[derpos_fs.current_directory_index].file_count++] = new_file;
-    } else if (string_compare(type, "bin") == 0) {
-        // Binary file
-        // Add specific handling for binary files if needed
-        derpos_fs.directories[derpos_fs.current_directory_index].files[derpos_fs.directories[derpos_fs.current_directory_index].file_count++] = new_file;
-    } else {
-        print_string("Invalid file type. Supported types: 'text', 'bin'\n");
-    }
-}
-
-void add_data(char *filename, char *data) {
-    for (int i = 0; i < derpos_fs.directories[derpos_fs.current_directory_index].file_count; ++i) {
-        if (string_compare(filename, derpos_fs.directories[derpos_fs.current_directory_index].files[i].name) == 0) {
-            // Append data to the file
-            string_concat(derpos_fs.directories[derpos_fs.current_directory_index].files[i].data, data, MAX_DATA_LEN);
-            derpos_fs.directories[derpos_fs.current_directory_index].files[i].size += string_length(data);
-            return;
-        }
-    }
-    print_string("File not found.\n");
-}
-
-void cat(char *filename) {
-    for (int i = 0; i < derpos_fs.directories[derpos_fs.current_directory_index].file_count; ++i) {
-        if (string_compare(filename, derpos_fs.directories[derpos_fs.current_directory_index].files[i].name) == 0) {
-            print_string(derpos_fs.directories[derpos_fs.current_directory_index].files[i].data);
-            print_string("\n");
-            return;
-        }
-    }
-    print_string("File not found.\n");
-}
-
-void terminal() {
-    char input_buffer[100];
-    while (1) {
-        print_string("Main>");
-        read_string(input_buffer);
-
-        if (string_compare(input_buffer, "exit") == 0) {
-            print_string("Exiting DerpOS...\n");
-            break;
-        } else if (string_compare(input_buffer, "ls") == 0) {
-            list_files();
-        } else if (string_compare(input_buffer, "chd") == 0) {
-            print_string("Enter directory name: ");
-            read_string(input_buffer);
-            change_directory(input_buffer);
-        } else if (string_compare(input_buffer, "mdir") == 0) {
-            print_string("Enter directory name: ");
-            read_string(input_buffer);
-            make_directory(input_buffer);
-        } else if (string_compare(input_buffer, "mkfile") == 0) {
-            print_string("Enter file name: ");
-            read_string(input_buffer);
-            print_string("Enter file type (text or bin): ");
-            read_string(input_buffer);
-            make_file(input_buffer, input_buffer);
-        } else if (string_compare(input_buffer, "ad") == 0) {
-            print_string("Enter file name: ");
-            read_string(input_buffer);
-            print_string("Enter data to add: ");
-            read_string(input_buffer);
-            add_data(input_buffer, input_buffer);
-        } else if (string_compare(input_buffer, "cat") == 0) {
-            print_string("Enter file name: ");
-            read_string(input_buffer);
-            cat(input_buffer);
-        } else if (string_compare(input_buffer, "save") == 0) {
-            save_to_xml("main.xml");
-            print_string("File system saved to main.xml.\n");
-        } else {
-            print_string("Unknown command. Type 'exit' to quit or use 'ls', 'chd', 'mdir', 'mkfile', 'ad', 'cat', 'save'.\n");
-        }
-    }
-}
-
-void main() {
-    init_filesystem();
-    print_string("Welcome to DerpOS Infdev!\n");
-    terminal();
-}
-
+bash
+nasm -f bin bootloader.asm -o bootloader.bin
+nasm -f elf kernel.asm -o kernel.o
+ld -Ttext 0x1000 --oformat binary kernel.o -o kernel.bin
+qemu-system-i386 -drive format=raw,file=bootloader.bin
